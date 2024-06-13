@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+import json
 
 
 def get_html_content(url):
@@ -50,32 +51,49 @@ def extract_experiences(soup):
                 for item in sf_items:
                     link_tag = item.find('a', class_='sf-item-wrapper')
                     link = link_tag['href'] if link_tag else 'N/A'
+
+                    #----------------------------------------------------
+                    # Body 
+                    #----------------------------------------------------
+                    item_body = item.find('div', class_='sf-item-body')
                     
-                    image_tag = item.find('img', class_='sf-item-image')
-                    image = image_tag['src'] if image_tag else 'N/A'
+                    item_image = item_body.find('div', class_='sf-item-image')
+                    image = item_image.find('img')['src'] if item_image else 'N/A'
                     
-                    title_tag = item.find('h2', class_='font-semibold')
-                    title = title_tag.text if title_tag else 'N/A'
-                    
-                    brand_tag = item.find('div', class_='sf-item-brand')
-                    brand = brand_tag.text.strip() if brand_tag else 'N/A'
-                    
+                    item_details = item_body.find('div', class_='sf-item-details')
+
+                    item_brand = item_details.find('div', class_='sf-item-brand')
+                    brand = item_brand.find('p')['title'] if item_brand else 'N/A'
+
+                    item_title = item_details.find('div', class_='sf-item-name')
+                    title = item_title.find('h2')['title'] if item_title else 'N/A'
+                    #----------------------------------------------------
+
                     status_tag = item.find('span', class_='label-color-sold-out')
-                    status = status_tag.text if status_tag else 'Available'
+                    status = status_tag.text if status_tag else 'Disponível'
                     
-                    points_tag = item.find('p', class_='sf-item-details')
-                    points = points_tag.find('span').text if points_tag and points_tag.find('span') else 'N/A'
-                    
+                    #----------------------------------------------------
+                    # Footer
+                    #----------------------------------------------------
+                    item_footer = item.find('div', class_='sf-item-footer')
+
+                    item_points = item_footer.find('p', class_='sf-item-details')
+                    points = item_points.find('span').text if item_points and item_points.find('span') else 'N/A'
+                    #----------------------------------------------------
+
                     experience = {
                         'link': link,
-                        'image': image,
                         'title': title,
+                        'image': image,
                         'brand': brand,
                         'status': status,
-                        'points': points
+                        'points': f"{points} MEOS"
                     }
                     
                     experiences.append(experience)
+
+                # Sort experiences such that the available ones come first
+                experiences = sorted(experiences, key=lambda x: x['status'] == 'Esgotado')
                 
                 return experiences
             else:
@@ -84,6 +102,15 @@ def extract_experiences(soup):
             return None
     else:
         return None
+
+
+def save_experiences_to_json(experiences, filename):
+    """
+    Saves the list of experiences to a JSON file.
+    """
+    data = {'experiences': experiences}
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
     
 
 url = 'https://loja.meo.pt/sensacoes-meos'
@@ -94,15 +121,7 @@ def main():
     experiences = extract_experiences(soup)
     
     if experiences:
-        for exp in experiences:
-            # Print the extracted experiences
-            print(f"Title: {exp['title']}")
-            print(f"Brand: {exp['brand']}")
-            print(f"Status: {exp['status']}")
-            print(f"Points: {exp['points']}")
-            print(f"Link: {exp['link']}")
-            print(f"Image: {exp['image']}")
-            print('-' * 20)
+        save_experiences_to_json(experiences, 'experiences.json')
     else:
         print('No experiences found!')
 
