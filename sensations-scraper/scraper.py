@@ -1,6 +1,10 @@
 import requests
-from bs4 import BeautifulSoup
+import discord
+import asyncio
 import json
+import os
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
 
 def get_html_content(url):
@@ -104,6 +108,18 @@ def extract_experiences(soup):
         return None
 
 
+def get_current_experiences():
+    """
+    Retrieves the current experiences from the MEO Sensations webpage,
+    and returns them as a list of dictionaries.
+    """
+    html_content = get_html_content(URL)
+    soup = parse_html_content(html_content)
+    experiences = extract_experiences(soup)
+    
+    return experiences
+
+
 def save_experiences_to_json(experiences, filename):
     """
     Saves the list of experiences to a JSON file.
@@ -113,18 +129,68 @@ def save_experiences_to_json(experiences, filename):
         json.dump(data, f, ensure_ascii=False, indent=4)
     
 
-url = 'https://loja.meo.pt/sensacoes-meos'
-
-def main():
-    html_content = get_html_content(url)
-    soup = parse_html_content(html_content)
-    experiences = extract_experiences(soup)
+def get_new_experiences(experiences_old, experiences_new):
+    """
+    Returns the experiences that are not present in the old experiences list.
+    """
+    old_links = {experience['link'] for experience in experiences_old}
+    new_experiences = [experience for experience in experiences_new if experience['link'] not in old_links]
     
-    if experiences:
-        save_experiences_to_json(experiences, 'experiences.json')
-    else:
-        print('No experiences found!')
+    return new_experiences
+
+
+class MeoSensationsBot(discord.Client):
+    async def on_ready(self):
+        self.channel = self.get_channel(CHANNEL_ID)
+        await self.check_new_experiences()
+
+
+    def create_experience_embed(self, exp):
+        embed = discord.Embed(
+            title=exp['title'],
+            url=exp['link'],
+            description=f"{exp['points']} - {exp['status']}",
+            color=discord.Color.green() if exp['status'] == 'Disponível' else discord.Color.red()
+        )
+        embed.set_author(name=exp['brand'])
+        embed.set_image(url=exp['image'])
+        embed.set_footer(text="Check out this new experience!")
+
+        return embed
+
+
+    async def check_new_experiences(self):
+        while True:
+            experiences_new = get_current_experiences()
+            
+            if experiences_new:
+                try:
+                    with open('experiences.json', 'r', encoding='utf-8') as f:
+                        experiences_old = json.load(f)['experiences']
+                except (FileNotFoundError, json.JSONDecodeError):
+                    experiences_old = []
+
+                new_experiences = get_new_experiences(experiences_old, experiences_new)
+                
+                if new_experiences:
+                    save_experiences_to_json(experiences_new, 'experiences.json')
+                    for exp in new_experiences:
+                        embed = self.create_experience_embed(exp)
+                        await self.channel.send(embed=embed)
+            else:
+                print('No experiences found!')
+
+            await asyncio.sleep(12 * 3600)  # Check every 12 hours
+
+
+# Load environment variables
+load_dotenv(dotenv_path='./discord.env')
+
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
+URL = 'https://loja.meo.pt/sensacoes-meos'
 
 
 if __name__ == '__main__':
-    main()
+    bot = MeoSensationsBot(intents=discord.Intents.default())
+    bot.run(DISCORD_TOKEN)
